@@ -94,7 +94,7 @@ func wrapLine(line string) (string, error) {
 	// args := strings.Split(strings.TrimPrefix(trim, "return "), ", ")
 
 	for i, arg := range args {
-		if arg == "err" || strings.HasPrefix(arg, "errors.New") || strings.HasPrefix(arg, "fmt.Errorf") {
+		if wrappable(arg) {
 			args[i] = fmt.Sprintf("errors.WithStack(%s)", arg)
 		}
 	}
@@ -132,4 +132,24 @@ func tokenizeArgs(args string) []string {
 	}
 
 	return tokens
+}
+
+func wrappable(arg string) bool {
+	if arg == "err" {
+		return true
+	}
+
+	if strings.HasPrefix(arg, "errors.New") {
+		return true
+	}
+
+	if strings.HasPrefix(arg, "fmt.Errorf") {
+		return true
+	}
+
+	if strings.HasPrefix(arg, "log.Error") {
+		return true
+	}
+
+	return false
 }
