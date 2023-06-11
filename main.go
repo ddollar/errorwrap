@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -35,6 +37,10 @@ func run() error {
 
 		fmt.Printf("processing: %s\n", path)
 
+		if err := rewriteErrors(path); err != nil {
+			return err
+		}
+
 		if err := wrapFile(path); err != nil {
 			return err
 		}
@@ -43,11 +49,24 @@ func run() error {
 	})
 }
 
-func wrapFile(path string) error {
-	// if path != "context.go" {
-	//   return nil
-	// }
+func rewriteErrors(path string) error {
+	args := []string{
+		"-r", `"errors" -> "github.com/pkg/errors"`,
+		"-r", "fmt.Errorf -> errors.Errorf",
+		"-w",
+		path,
+	}
 
+	if data, err := exec.Command("gofmt", args...).CombinedOutput(); err != nil {
+		return errors.New(string(data))
+	}
+
+	return nil
+}
+
+var doubleWrap = regexp.MustCompile(`errors\.WithStack\(errors\.(.*?)\)\)`)
+
+func wrapFile(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -66,17 +85,17 @@ func wrapFile(path string) error {
 			return err
 		}
 
-		lines[i] = wl
+		wl = doubleWrap.ReplaceAllString(wl, "errors.$1)")
 
-		// fmt.Printf("%d: %s\n", i, lines[i])
+		lines[i] = wl
 	}
 
 	if err := ioutil.WriteFile(path, []byte(strings.Join(lines, "\n")), info.Mode()); err != nil {
 		return err
 	}
 
-	if err := exec.Command("goimports", "-w", path).Run(); err != nil {
-		return err
+	if data, err := exec.Command("goimports", "-w", path).CombinedOutput(); err != nil {
+		return errors.New(string(data))
 	}
 
 	return nil
@@ -90,8 +109,6 @@ func wrapLine(line string) (string, error) {
 	}
 
 	args := tokenizeArgs(strings.TrimPrefix(trim, "return "))
-
-	// args := strings.Split(strings.TrimPrefix(trim, "return "), ", ")
 
 	for i, arg := range args {
 		if wrappable(arg) {
